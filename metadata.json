@@ -1,0 +1,6 @@
+{
+  "name": "Chess Notation Manager",
+  "description": "An efficient, minimal, and lightning-fast digital chess scoresheet for recording game moves with hotkeys, local storage, and PGN support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
