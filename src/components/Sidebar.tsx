@@ -23,7 +23,8 @@ import {
   Puzzle,
   Trophy,
   ArrowUpAZ,
-  ArrowDownAZ
+  ArrowDownAZ,
+  Cloud
 } from 'lucide-react';
 import { Folder, Game } from '../types';
 
@@ -40,6 +41,7 @@ interface SidebarProps {
   onBackup: () => void;
   onRestore: (file: File) => void;
   onOpenImport: () => void;
+  onOpenGistSync?: () => void;
   darkMode: boolean;
   setDarkMode: (dark: boolean) => void;
   onMoveGame?: (gameId: string, sourceFolderId: string, targetFolderId: string) => void;
@@ -77,6 +79,7 @@ export default function Sidebar({
   onBackup,
   onRestore,
   onOpenImport,
+  onOpenGistSync,
   darkMode,
   setDarkMode,
   onMoveGame,
@@ -1180,6 +1183,22 @@ export default function Sidebar({
         darkMode ? 'border-zinc-800 bg-zinc-950' : 'border-stone-200 bg-stone-50'
       }`} id="sidebar-footer">
         
+        {/* GitHub Gist Cloud Sync button */}
+        {onOpenGistSync && (
+          <button
+            onClick={onOpenGistSync}
+            className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-bold rounded-md border transition-all ${
+              darkMode
+                ? 'bg-amber-600/15 border-amber-600/35 hover:bg-amber-600/25 text-amber-300'
+                : 'bg-amber-50 border-amber-200 hover:bg-amber-100 text-amber-800'
+            }`}
+            id="btn-sidebar-gist-sync"
+          >
+            <Cloud className="w-3.5 h-3.5" />
+            Cloud Gist Sync
+          </button>
+        )}
+
         {/* Bulk PGN Import button */}
         <button
           onClick={onOpenImport}

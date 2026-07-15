@@ -19,6 +19,7 @@ import Sidebar from './components/Sidebar';
 import GameEditor from './components/GameEditor';
 import ImportModal from './components/ImportModal';
 import HotkeyModal from './components/HotkeyModal';
+import GistSyncModal from './components/GistSyncModal';
 
 // Seed initial example data
 const SEED_FOLDERS = (): Folder[] => {
@@ -101,6 +102,7 @@ export default function App() {
   // Modals
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isHotkeyOpen, setIsHotkeyOpen] = useState(false);
+  const [isGistSyncOpen, setIsGistSyncOpen] = useState(false);
 
   // Status/Alerts
   const [alertMsg, setAlertMsg] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -565,6 +567,42 @@ export default function App() {
     reader.readAsText(file);
   };
 
+  // GIST CLOUD SYNC SUCCESS HANDLER
+  const handleGistSyncSuccess = (mergedFolders: Folder[], message: string) => {
+    setFolders(mergedFolders);
+    localStorage.setItem('chess_notation_folders', JSON.stringify(mergedFolders));
+    
+    // Validate currently selected folder and game
+    if (mergedFolders.length > 0) {
+      const activeFolderStillExists = mergedFolders.some(f => f.id === activeFolderId);
+      if (!activeFolderStillExists) {
+        setActiveFolderId(mergedFolders[0].id);
+        if (mergedFolders[0].games.length > 0) {
+          setActiveGameId(mergedFolders[0].games[0].id);
+        } else {
+          setActiveGameId(null);
+        }
+      } else {
+        const activeFolder = mergedFolders.find(f => f.id === activeFolderId);
+        if (activeFolder) {
+          const activeGameStillExists = activeFolder.games.some(g => g.id === activeGameId);
+          if (!activeGameStillExists) {
+            if (activeFolder.games.length > 0) {
+              setActiveGameId(activeFolder.games[0].id);
+            } else {
+              setActiveGameId(null);
+            }
+          }
+        }
+      }
+    } else {
+      setActiveFolderId(null);
+      setActiveGameId(null);
+    }
+    
+    triggerAlert(message, 'success');
+  };
+
   // IMPORT PGN SUCCESS HANDLER
   const handleImportSuccess = (
     importedGames: Partial<Game>[],
@@ -653,6 +691,7 @@ export default function App() {
           onBackup={handleBackupAllData}
           onRestore={handleRestoreData}
           onOpenImport={() => setIsImportOpen(true)}
+          onOpenGistSync={() => setIsGistSyncOpen(true)}
           darkMode={darkMode}
           setDarkMode={setDarkMode}
           onUpdateGame={handleUpdateGame}
@@ -819,6 +858,16 @@ export default function App() {
       {isHotkeyOpen && (
         <HotkeyModal
           onClose={() => setIsHotkeyOpen(false)}
+          darkMode={darkMode}
+        />
+      )}
+
+      {/* GitHub Gist Cloud Sync Modal Overlay */}
+      {isGistSyncOpen && (
+        <GistSyncModal
+          onClose={() => setIsGistSyncOpen(false)}
+          folders={folders}
+          onSyncSuccess={handleGistSyncSuccess}
           darkMode={darkMode}
         />
       )}
