@@ -1189,43 +1189,28 @@ export default function Sidebar({
         
         {/* GitHub Gist Cloud Sync button */}
         {onOpenGistSync && (
-          <div className="w-full flex flex-col gap-1">
-            <button
-              onClick={onOpenGistSync}
-              disabled={isBgSyncing}
-              className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-bold rounded-md border transition-all ${
-                darkMode
-                  ? isBgSyncing
-                    ? 'bg-zinc-800 border-zinc-700 text-zinc-400 opacity-70'
-                    : hasUnsyncedChanges
-                      ? 'bg-amber-600/20 border-amber-500/80 hover:bg-amber-600/30 text-amber-200 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
-                      : 'bg-amber-600/15 border-amber-600/35 hover:bg-amber-600/25 text-amber-300'
-                  : isBgSyncing
-                    ? 'bg-stone-100 border-stone-200 text-stone-400 opacity-75'
-                    : hasUnsyncedChanges
-                      ? 'bg-amber-50/80 border-amber-400 hover:bg-amber-100 text-amber-900 shadow-[0_0_8px_rgba(245,158,11,0.15)]'
-                      : 'bg-amber-50 border-amber-200 hover:bg-amber-100 text-amber-800'
-              }`}
-              id="btn-sidebar-gist-sync"
-            >
-              <Cloud className={`w-3.5 h-3.5 ${isBgSyncing ? 'animate-spin text-amber-500' : hasUnsyncedChanges ? 'text-amber-500' : ''}`} />
-              <span>{isBgSyncing ? 'Syncing...' : 'Cloud Gist Sync'}</span>
-              
-              {hasUnsyncedChanges && !isBgSyncing && (
-                <span className="relative flex h-2 w-2 ml-1">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                </span>
-              )}
-            </button>
+          <button
+            onClick={onOpenGistSync}
+            disabled={isBgSyncing}
+            title={hasUnsyncedChanges && !isBgSyncing ? "Unsynced changes pending" : undefined}
+            className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-bold rounded-md border transition-all ${
+              darkMode
+                ? isBgSyncing
+                  ? 'bg-zinc-800 border-zinc-700 text-zinc-400 opacity-70'
+                  : 'bg-amber-600/15 border-amber-600/35 hover:bg-amber-600/25 text-amber-300'
+                : isBgSyncing
+                  ? 'bg-stone-100 border-stone-200 text-stone-400 opacity-75'
+                  : 'bg-amber-50 border-amber-200 hover:bg-amber-100 text-amber-800'
+            }`}
+            id="btn-sidebar-gist-sync"
+          >
+            <Cloud className={`w-3.5 h-3.5 ${isBgSyncing ? 'animate-spin text-amber-500' : ''}`} />
+            <span>{isBgSyncing ? 'Syncing...' : 'Cloud Gist Sync'}</span>
             
             {hasUnsyncedChanges && !isBgSyncing && (
-              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold text-center mt-0.5 animate-pulse flex items-center justify-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                Unsynced changes pending
-              </span>
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0 ml-0.5" />
             )}
-          </div>
+          </button>
         )}
 
         {/* Bulk PGN Import button */}
