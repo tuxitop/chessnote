@@ -104,6 +104,23 @@ export default function App() {
   const [isHotkeyOpen, setIsHotkeyOpen] = useState(false);
   const [isGistSyncOpen, setIsGistSyncOpen] = useState(false);
 
+  // Gist Cloud Sync States
+  const [syncInterval, setSyncInterval] = useState<string>(() => localStorage.getItem('gist_sync_interval') || 'manual');
+  const [isBgSyncing, setIsBgSyncing] = useState<boolean>(false);
+  const [hasUnsyncedChanges, setHasUnsyncedChanges] = useState<boolean>(() => localStorage.getItem('gist_sync_has_unsynced_changes') === 'true');
+  const [autoSyncOnChanges, setAutoSyncOnChanges] = useState<boolean>(() => {
+    const saved = localStorage.getItem('gist_sync_auto_on_changes');
+    return saved !== 'false';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('gist_sync_auto_on_changes', String(autoSyncOnChanges));
+  }, [autoSyncOnChanges]);
+
+  useEffect(() => {
+    localStorage.setItem('gist_sync_has_unsynced_changes', String(hasUnsyncedChanges));
+  }, [hasUnsyncedChanges]);
+
   // Status/Alerts
   const [alertMsg, setAlertMsg] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -212,6 +229,7 @@ export default function App() {
     localStorage.setItem('chess_notation_folders', JSON.stringify(updatedFolders));
     // Trigger subtle save alert
     triggerAlert('Data auto-saved to local scorebook');
+    setHasUnsyncedChanges(true);
   };
 
   // CREATE FOLDER
@@ -363,6 +381,7 @@ export default function App() {
     setFolders(updated);
     // Explicit save without flashing too many alerts for every single keystroke
     localStorage.setItem('chess_notation_folders', JSON.stringify(updated));
+    setHasUnsyncedChanges(true);
   };
 
   // DELETE GAME
@@ -571,6 +590,7 @@ export default function App() {
   const handleGistSyncSuccess = (mergedFolders: Folder[], message: string) => {
     setFolders(mergedFolders);
     localStorage.setItem('chess_notation_folders', JSON.stringify(mergedFolders));
+    setHasUnsyncedChanges(false);
     
     // Validate currently selected folder and game
     if (mergedFolders.length > 0) {
@@ -602,6 +622,323 @@ export default function App() {
     
     triggerAlert(message, 'success');
   };
+
+  // Reference to keep track of the absolute latest folders state
+  const foldersRef = React.useRef(folders);
+  useEffect(() => {
+    foldersRef.current = folders;
+  }, [folders]);
+
+  // Periodical Background Cloud Sync Effect
+  useEffect(() => {
+    const token = localStorage.getItem('gist_sync_token');
+    const gistId = localStorage.getItem('gist_sync_id');
+
+    if (!token || !gistId || syncInterval === 'manual') {
+      return;
+    }
+
+    // Map interval strings to milliseconds
+    const intervalsMap: Record<string, number> = {
+      '15m': 15 * 60 * 1000,
+      '30m': 30 * 60 * 1000,
+      '1h': 60 * 60 * 1000,
+      '4h': 4 * 60 * 60 * 1000,
+      '12h': 12 * 60 * 60 * 1000,
+      '24h': 24 * 60 * 60 * 1000,
+    };
+
+    const ms = intervalsMap[syncInterval];
+    if (!ms) return;
+
+    const performBackgroundSync = async () => {
+      setIsBgSyncing(true);
+      try {
+        const currentFolders = foldersRef.current;
+        
+        // 1. Fetch Cloud Gist
+        const response = await fetch(`https://api.github.com/gists/${gistId.trim()}`, {
+          headers: {
+            Authorization: `token ${token.trim()}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`Cloud fetch failed: ${response.statusText} (${response.status})`);
+        }
+
+        const gistData = await response.json();
+        const fileObj = gistData.files['chess_notation_backup.json'];
+        
+        if (!fileObj || !fileObj.content) {
+          throw new Error('chess_notation_backup.json file missing inside your Gist.');
+        }
+
+        const parsed = JSON.parse(fileObj.content);
+        const cloudFolders = parsed.folders as Folder[];
+
+        if (!cloudFolders || !Array.isArray(cloudFolders)) {
+          throw new Error('Cloud Gist database format is invalid.');
+        }
+
+        // 2. Bidirectional Lossless Smart Merge
+        const localFoldersMap = new Map<string, Folder>();
+        currentFolders.forEach(f => localFoldersMap.set(f.id, f));
+
+        const cloudFoldersMap = new Map<string, Folder>();
+        cloudFolders.forEach(f => cloudFoldersMap.set(f.id, f));
+
+        const allFolderIds = new Set<string>([...localFoldersMap.keys(), ...cloudFoldersMap.keys()]);
+        const mergedFolders: Folder[] = [];
+
+        allFolderIds.forEach(folderId => {
+          const localFolder = localFoldersMap.get(folderId);
+          const cloudFolder = cloudFoldersMap.get(folderId);
+
+          if (localFolder && cloudFolder) {
+            const localGamesMap = new Map<string, any>();
+            localFolder.games.forEach(g => localGamesMap.set(g.id, g));
+
+            const cloudGamesMap = new Map<string, any>();
+            cloudFolder.games.forEach(g => cloudGamesMap.set(g.id, g));
+
+            const allGameIds = new Set<string>([...localGamesMap.keys(), ...cloudGamesMap.keys()]);
+            const mergedGames: any[] = [];
+
+            allGameIds.forEach(gameId => {
+              const localGame = localGamesMap.get(gameId);
+              const cloudGame = cloudGamesMap.get(gameId);
+
+              if (localGame && cloudGame) {
+                // Compare moves, analysis reports, and notes
+                const localScore = (localGame.moves?.length || 0) + (localGame.analysisReports?.length || 0) * 5 + (localGame.notes?.length || 0) * 0.1;
+                const cloudScore = (cloudGame.moves?.length || 0) + (cloudGame.analysisReports?.length || 0) * 5 + (cloudGame.notes?.length || 0) * 0.1;
+
+                if (localScore >= cloudScore) {
+                  mergedGames.push(localGame);
+                } else {
+                  mergedGames.push(cloudGame);
+                }
+              } else if (localGame) {
+                mergedGames.push(localGame);
+              } else if (cloudGame) {
+                mergedGames.push(cloudGame);
+              }
+            });
+
+            mergedFolders.push({
+              ...localFolder,
+              name: localFolder.name || cloudFolder.name,
+              parentId: localFolder.parentId || cloudFolder.parentId || null,
+              games: mergedGames
+            });
+          } else if (localFolder) {
+            mergedFolders.push(localFolder);
+          } else if (cloudFolder) {
+            mergedFolders.push(cloudFolder);
+          }
+        });
+
+        // 3. Save merged database to Gist Cloud
+        const backupData = {
+          version: '1.0.0',
+          exportedAt: new Date().toISOString(),
+          folders: mergedFolders
+        };
+
+        const gistPayload = {
+          description: 'Chess Notation Scorebook Synchronization Database',
+          files: {
+            'chess_notation_backup.json': {
+              content: JSON.stringify(backupData, null, 2)
+            }
+          }
+        };
+
+        const patchResponse = await fetch(`https://api.github.com/gists/${gistId.trim()}`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `token ${token.trim()}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(gistPayload)
+        });
+
+        if (!patchResponse.ok) {
+          throw new Error(`Failed to upload merged scoresheets to cloud: ${patchResponse.statusText}`);
+        }
+
+        // 4. Update states & localStorage
+        setFolders(mergedFolders);
+        localStorage.setItem('chess_notation_folders', JSON.stringify(mergedFolders));
+        setHasUnsyncedChanges(false);
+        const now = new Date().toLocaleString();
+        localStorage.setItem('gist_sync_last_time', now);
+
+        triggerAlert('Background cloud sync completed successfully!', 'success');
+      } catch (err: any) {
+        console.error('Background cloud sync failure:', err);
+        triggerAlert(`Background sync failed: ${err.message || err}`, 'error');
+      } finally {
+        setIsBgSyncing(false);
+      }
+    };
+
+    // Run first background sync after 10 seconds to avoid blocking main thread on load, then run periodically
+    const startupTimerId = setTimeout(performBackgroundSync, 10000);
+    const intervalId = setInterval(performBackgroundSync, ms);
+
+    return () => {
+      clearTimeout(startupTimerId);
+      clearInterval(intervalId);
+    };
+  }, [syncInterval, triggerAlert]);
+
+  // Automatic Sync On Changes (with a 20-second debounce to avoid overloading)
+  useEffect(() => {
+    const token = localStorage.getItem('gist_sync_token');
+    const gistId = localStorage.getItem('gist_sync_id');
+
+    if (!autoSyncOnChanges || !token || !gistId || !hasUnsyncedChanges || isBgSyncing) {
+      return;
+    }
+
+    const performAutoSyncOnChanges = async () => {
+      setIsBgSyncing(true);
+      try {
+        const currentFolders = foldersRef.current;
+        
+        // 1. Fetch Cloud Gist
+        const response = await fetch(`https://api.github.com/gists/${gistId.trim()}`, {
+          headers: {
+            Authorization: `token ${token.trim()}`
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`Cloud fetch failed: ${response.statusText} (${response.status})`);
+        }
+
+        const gistData = await response.json();
+        const fileObj = gistData.files['chess_notation_backup.json'];
+        
+        if (!fileObj || !fileObj.content) {
+          throw new Error('chess_notation_backup.json file missing inside your Gist.');
+        }
+
+        const parsed = JSON.parse(fileObj.content);
+        const cloudFolders = parsed.folders as Folder[];
+
+        if (!cloudFolders || !Array.isArray(cloudFolders)) {
+          throw new Error('Cloud Gist database format is invalid.');
+        }
+
+        // 2. Bidirectional Lossless Smart Merge
+        const localFoldersMap = new Map<string, Folder>();
+        currentFolders.forEach(f => localFoldersMap.set(f.id, f));
+
+        const cloudFoldersMap = new Map<string, Folder>();
+        cloudFolders.forEach(f => cloudFoldersMap.set(f.id, f));
+
+        const allFolderIds = new Set<string>([...localFoldersMap.keys(), ...cloudFoldersMap.keys()]);
+        const mergedFolders: Folder[] = [];
+
+        allFolderIds.forEach(folderId => {
+          const localFolder = localFoldersMap.get(folderId);
+          const cloudFolder = cloudFoldersMap.get(folderId);
+
+          if (localFolder && cloudFolder) {
+            const localGamesMap = new Map<string, any>();
+            localFolder.games.forEach(g => localGamesMap.set(g.id, g));
+
+            const cloudGamesMap = new Map<string, any>();
+            cloudFolder.games.forEach(g => cloudGamesMap.set(g.id, g));
+
+            const allGameIds = new Set<string>([...localGamesMap.keys(), ...cloudGamesMap.keys()]);
+            const mergedGames: any[] = [];
+
+            allGameIds.forEach(gameId => {
+              const localGame = localGamesMap.get(gameId);
+              const cloudGame = cloudGamesMap.get(gameId);
+
+              if (localGame && cloudGame) {
+                const localScore = (localGame.moves?.length || 0) + (localGame.analysisReports?.length || 0) * 5 + (localGame.notes?.length || 0) * 0.1;
+                const cloudScore = (cloudGame.moves?.length || 0) + (cloudGame.analysisReports?.length || 0) * 5 + (cloudGame.notes?.length || 0) * 0.1;
+
+                if (localScore >= cloudScore) {
+                  mergedGames.push(localGame);
+                } else {
+                  mergedGames.push(cloudGame);
+                }
+              } else if (localGame) {
+                mergedGames.push(localGame);
+              } else if (cloudGame) {
+                mergedGames.push(cloudGame);
+              }
+            });
+
+            mergedFolders.push({
+              ...localFolder,
+              name: localFolder.name || cloudFolder.name,
+              parentId: localFolder.parentId || cloudFolder.parentId || null,
+              games: mergedGames
+            });
+          } else if (localFolder) {
+            mergedFolders.push(localFolder);
+          } else if (cloudFolder) {
+            mergedFolders.push(cloudFolder);
+          }
+        });
+
+        // 3. Save merged database to Gist Cloud
+        const backupData = {
+          version: '1.0.0',
+          exportedAt: new Date().toISOString(),
+          folders: mergedFolders
+        };
+
+        const gistPayload = {
+          description: 'Chess Notation Scorebook Synchronization Database',
+          files: {
+            'chess_notation_backup.json': {
+              content: JSON.stringify(backupData, null, 2)
+            }
+          }
+        };
+
+        const patchResponse = await fetch(`https://api.github.com/gists/${gistId.trim()}`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `token ${token.trim()}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(gistPayload)
+        });
+
+        if (!patchResponse.ok) {
+          throw new Error(`Failed to upload merged scoresheets to cloud: ${patchResponse.statusText}`);
+        }
+
+        // 4. Update states & localStorage
+        setFolders(mergedFolders);
+        localStorage.setItem('chess_notation_folders', JSON.stringify(mergedFolders));
+        setHasUnsyncedChanges(false);
+        const now = new Date().toLocaleString();
+        localStorage.setItem('gist_sync_last_time', now);
+
+        triggerAlert('Automatic cloud sync completed successfully!', 'success');
+      } catch (err: any) {
+        console.error('Automatic cloud sync failure:', err);
+        triggerAlert(`Automatic sync failed: ${err.message || err}`, 'error');
+      } finally {
+        setIsBgSyncing(false);
+      }
+    };
+
+    const timer = setTimeout(performAutoSyncOnChanges, 20000); // 20-second debounce to avoid overloading GitHub servers
+
+    return () => clearTimeout(timer);
+  }, [autoSyncOnChanges, hasUnsyncedChanges, folders, triggerAlert]);
 
   // IMPORT PGN SUCCESS HANDLER
   const handleImportSuccess = (
@@ -692,6 +1029,8 @@ export default function App() {
           onRestore={handleRestoreData}
           onOpenImport={() => setIsImportOpen(true)}
           onOpenGistSync={() => setIsGistSyncOpen(true)}
+          isBgSyncing={isBgSyncing}
+          hasUnsyncedChanges={hasUnsyncedChanges && !!localStorage.getItem('gist_sync_token') && !!localStorage.getItem('gist_sync_id')}
           darkMode={darkMode}
           setDarkMode={setDarkMode}
           onUpdateGame={handleUpdateGame}
@@ -869,6 +1208,10 @@ export default function App() {
           folders={folders}
           onSyncSuccess={handleGistSyncSuccess}
           darkMode={darkMode}
+          syncInterval={syncInterval}
+          onSetSyncInterval={setSyncInterval}
+          autoSyncOnChanges={autoSyncOnChanges}
+          onSetAutoSyncOnChanges={setAutoSyncOnChanges}
         />
       )}
 

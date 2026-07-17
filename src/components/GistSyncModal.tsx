@@ -24,12 +24,16 @@ interface GistSyncModalProps {
   folders: Folder[];
   onSyncSuccess: (mergedFolders: Folder[], message: string) => void;
   darkMode: boolean;
+  syncInterval: string;
+  onSetSyncInterval: (interval: string) => void;
+  autoSyncOnChanges: boolean;
+  onSetAutoSyncOnChanges: (auto: boolean) => void;
 }
 
 interface GistSettings {
   token: string;
   gistId: string;
-  autoSync: boolean;
+  syncInterval: string;
   lastSynced: string;
 }
 
@@ -37,12 +41,15 @@ export default function GistSyncModal({
   onClose,
   folders,
   onSyncSuccess,
-  darkMode
+  darkMode,
+  syncInterval,
+  onSetSyncInterval,
+  autoSyncOnChanges,
+  onSetAutoSyncOnChanges
 }: GistSyncModalProps) {
   // Load settings from localStorage
   const [token, setToken] = useState<string>(() => localStorage.getItem('gist_sync_token') || '');
   const [gistId, setGistId] = useState<string>(() => localStorage.getItem('gist_sync_id') || '');
-  const [autoSync, setAutoSync] = useState<boolean>(() => localStorage.getItem('gist_sync_auto') === 'true');
   const [lastSynced, setLastSynced] = useState<string>(() => localStorage.getItem('gist_sync_last_time') || '');
 
   const [showToken, setShowToken] = useState(false);
@@ -51,15 +58,14 @@ export default function GistSyncModal({
   const [showGuide, setShowGuide] = useState(false);
 
   // Save settings to localStorage helper
-  const saveSettings = (updatedToken: string, updatedGistId: string, updatedAuto: boolean) => {
+  const saveSettings = (updatedToken: string, updatedGistId: string) => {
     localStorage.setItem('gist_sync_token', updatedToken);
     localStorage.setItem('gist_sync_id', updatedGistId);
-    localStorage.setItem('gist_sync_auto', String(updatedAuto));
   };
 
   useEffect(() => {
-    saveSettings(token, gistId, autoSync);
-  }, [token, gistId, autoSync]);
+    saveSettings(token, gistId);
+  }, [token, gistId]);
 
   // Validate the credentials with GitHub API
   const handleValidate = async () => {
@@ -547,6 +553,56 @@ export default function GistSyncModal({
                 }`}
                 id="gist-id-input"
               />
+            </div>
+
+            <div>
+              <label className={`block text-xs font-semibold mb-1.5 ${darkMode ? 'text-zinc-400' : 'text-stone-700'}`}>
+                Periodical Background Sync
+              </label>
+              <select
+                value={syncInterval}
+                onChange={(e) => {
+                  onSetSyncInterval(e.target.value);
+                  localStorage.setItem('gist_sync_interval', e.target.value);
+                }}
+                className={`w-full px-3 py-2 text-xs rounded-lg outline-none border transition-colors ${
+                  darkMode 
+                    ? 'bg-zinc-950 border-zinc-850 focus:border-zinc-700 text-zinc-100' 
+                    : 'bg-white border-stone-250 focus:border-stone-400 text-stone-900'
+                }`}
+                id="gist-sync-interval-select"
+              >
+                <option value="manual">Manual Sync Only</option>
+                <option value="15m">Every 15 minutes</option>
+                <option value="30m">Every 30 minutes</option>
+                <option value="1h">Every 1 hour</option>
+                <option value="4h">Every 4 hours</option>
+                <option value="12h">Every 12 hours</option>
+                <option value="24h">Every 24 hours</option>
+              </select>
+            </div>
+
+            <div className={`p-3 rounded-lg border flex flex-col gap-1.5 ${
+              darkMode ? 'bg-zinc-900/50 border-zinc-800' : 'bg-stone-50 border-stone-200'
+            }`} id="auto-sync-on-changes-container">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="gist-sync-auto-on-changes-checkbox"
+                  checked={autoSyncOnChanges}
+                  onChange={(e) => onSetAutoSyncOnChanges(e.target.checked)}
+                  className="rounded border-stone-300 dark:border-zinc-700 text-amber-600 focus:ring-amber-500 h-4 w-4 cursor-pointer"
+                />
+                <label
+                  htmlFor="gist-sync-auto-on-changes-checkbox"
+                  className={`text-xs font-bold cursor-pointer select-none ${darkMode ? 'text-zinc-200' : 'text-stone-800'}`}
+                >
+                  Auto-Sync on Changes
+                </label>
+              </div>
+              <p className={`text-[10px] pl-6 leading-relaxed ${darkMode ? 'text-zinc-500' : 'text-stone-500'}`}>
+                When enabled, local scorebook changes are automatically synced (smart lossless merge) to GitHub Gist after 20 seconds of inactivity to avoid server overload.
+              </p>
             </div>
           </div>
 

@@ -1404,7 +1404,7 @@ export default function GameEditor({
     }
   };
 
-  // Global key navigation for chess plies using ArrowUp / ArrowDown (and ArrowLeft / ArrowRight) and Alt+S color toggle shortcut
+  // Global key navigation for chess plies, Alt+S starting color toggle, and Ctrl+Z undo shortcuts
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       // Shortcut Alt+S to toggle starting color
@@ -1423,6 +1423,14 @@ export default function GameEditor({
       );
       if (isInputOrTextArea) return;
 
+      // Ctrl + Z / Cmd + Z: Undo move
+      const isModifierPressed = e.ctrlKey || e.metaKey;
+      if (isModifierPressed && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        handleUndoLastMove();
+        return;
+      }
+
       if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
         e.preventDefault();
         goToPreviousPly();
@@ -1434,7 +1442,7 @@ export default function GameEditor({
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [activeLine, currentPlyIndex, game.moves, game.startingColor, onUpdateGame]);
+  }, [activeLine, currentPlyIndex, game, undoHistory, onUpdateGame]);
 
   // Force General Notes tab if PGN is invalid or Freestyle Mode is active
   useEffect(() => {

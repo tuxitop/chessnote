@@ -28,6 +28,16 @@ export default function HotkeyModal({ onClose, darkMode }: HotkeyModalProps) {
       detail: 'Triggers an explicit backup and manual save of all files to local storage (app also auto-saves on every move).'
     },
     {
+      keys: [`${altModifier}`, 'S'],
+      desc: 'Toggle Starting Turn',
+      detail: 'Switches between White and Black for the start of the game (in Freestyle Note Taking Mode).'
+    },
+    {
+      keys: [`${modifier}`, 'Z'],
+      desc: 'Undo Last Move',
+      detail: 'Undoes the last move played or recorded, removing it from the active scoresheet line.'
+    },
+    {
       keys: [`${modifier}`, '←'],
       desc: 'Previous Game',
       detail: 'Switches to the previous game in the active folder without touching the mouse.'
