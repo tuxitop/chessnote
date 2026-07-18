@@ -47,6 +47,7 @@ interface SidebarProps {
   darkMode: boolean;
   setDarkMode: (dark: boolean) => void;
   onMoveGame?: (gameId: string, sourceFolderId: string, targetFolderId: string) => void;
+  onMoveFolder?: (folderId: string, targetParentId: string | null) => void;
   onUpdateGame?: (updatedGame: Game) => void;
   onDeleteGame?: (gameId: string) => void;
   isCollapsed?: boolean;
@@ -87,6 +88,7 @@ export default function Sidebar({
   darkMode,
   setDarkMode,
   onMoveGame,
+  onMoveFolder,
   onUpdateGame,
   onDeleteGame,
   isCollapsed,
@@ -467,17 +469,28 @@ export default function Sidebar({
                   : darkMode ? 'border-transparent hover:border-zinc-850' : 'border-transparent hover:border-stone-100'
               }`}
               id={`folder-item-${folder.id}`}
-              // Drop zone for dragging games
-              onDragOver={(e) => e.preventDefault()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
               onDrop={(e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 try {
                   const dataStr = e.dataTransfer.getData('text/plain');
                   if (!dataStr) return;
-                  const { gameId, sourceFolderId } = JSON.parse(dataStr);
-                  if (gameId && sourceFolderId && sourceFolderId !== folder.id) {
-                    if (onMoveGame) {
-                      onMoveGame(gameId, sourceFolderId, folder.id);
+                  const data = JSON.parse(dataStr);
+                  
+                  // Check if it's a game being dropped
+                  if (data.gameId && data.sourceFolderId) {
+                    if (data.sourceFolderId !== folder.id && onMoveGame) {
+                      onMoveGame(data.gameId, data.sourceFolderId, folder.id);
+                    }
+                  }
+                  // Check if it's a folder being dropped
+                  else if (data.dragFolderId) {
+                    if (data.dragFolderId !== folder.id && onMoveFolder) {
+                      onMoveFolder(data.dragFolderId, folder.id);
                     }
                   }
                 } catch (err) {
@@ -491,6 +504,12 @@ export default function Sidebar({
                 className={`flex items-center justify-between p-2 rounded-t-lg cursor-pointer group ${
                   darkMode ? 'hover:bg-zinc-900/60' : 'hover:bg-stone-100/80'
                 }`}
+                draggable={true}
+                onDragStart={(e) => {
+                  e.stopPropagation();
+                  e.dataTransfer.setData('text/plain', JSON.stringify({ dragFolderId: folder.id }));
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
               >
                 <div className="flex items-center gap-2 overflow-hidden flex-1">
                   {isExpanded ? (
@@ -914,7 +933,28 @@ export default function Sidebar({
       </div>
 
       {/* Folders & Games List */}
-      <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2" id="sidebar-list">
+      <div 
+        className="flex-1 overflow-y-auto p-3 flex flex-col gap-2" 
+        id="sidebar-list"
+        onDragOver={(e) => {
+          e.preventDefault();
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          try {
+            const dataStr = e.dataTransfer.getData('text/plain');
+            if (!dataStr) return;
+            const data = JSON.parse(dataStr);
+            
+            // If dropping a folder onto the empty area of the sidebar-list, set its parentId to null (root level)
+            if (data.dragFolderId && onMoveFolder) {
+              onMoveFolder(data.dragFolderId, null);
+            }
+          } catch (err) {
+            console.error(err);
+          }
+        }}
+      >
         
         {/* Create buttons */}
         <div className="grid grid-cols-2 gap-2 mb-2">

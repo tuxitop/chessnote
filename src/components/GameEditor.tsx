@@ -847,7 +847,15 @@ export default function GameEditor({
 
       if (!moveObj) {
         if (cgInstanceRef.current) {
-          cgInstanceRef.current.set({ fen: puzzleFen });
+          const resetChess = new Chess(puzzleFen);
+          cgInstanceRef.current.set({
+            fen: puzzleFen,
+            turnColor: resetChess.turn() === 'b' ? 'black' : 'white',
+            movable: {
+              color: resetChess.turn() === 'b' ? 'black' : 'white',
+              dests: getDests(resetChess) as any
+            }
+          });
         }
         return;
       }
@@ -878,7 +886,12 @@ export default function GameEditor({
 
         if (nextStep >= game.moves.length) {
           setPuzzleState('solved');
-          onUpdateGame({ ...game, puzzleStatus: 'solved' });
+          // Only auto-mark as solved if they made zero mistakes on this attempt
+          if (mistakeCount === 0) {
+            onUpdateGame({ ...game, puzzleStatus: 'solved' });
+          } else {
+            onUpdateGame({ ...game, puzzleStatus: 'failed' });
+          }
           if (cgInstanceRef.current) {
             cgInstanceRef.current.set({
               fen: fenAfterUserMove,
@@ -909,7 +922,12 @@ export default function GameEditor({
 
                   if (stepAfterOpp >= game.moves.length) {
                     setPuzzleState('solved');
-                    onUpdateGame({ ...game, puzzleStatus: 'solved' });
+                    // Only auto-mark as solved if they made zero mistakes on this attempt
+                    if (mistakeCount === 0) {
+                      onUpdateGame({ ...game, puzzleStatus: 'solved' });
+                    } else {
+                      onUpdateGame({ ...game, puzzleStatus: 'failed' });
+                    }
                     if (cgInstanceRef.current) {
                       cgInstanceRef.current.set({
                         fen: fenAfterOppMove,
@@ -938,14 +956,21 @@ export default function GameEditor({
           }, 800);
         }
       } else {
-        setMistakeCount(prev => prev + 1);
+        const nextMistakes = mistakeCount + 1;
+        setMistakeCount(nextMistakes);
         setPuzzleState('failed');
-        if (game.puzzleStatus !== 'solved') {
-          onUpdateGame({ ...game, puzzleStatus: 'failed' });
-        }
+        onUpdateGame({ ...game, puzzleStatus: 'failed' });
 
         if (cgInstanceRef.current) {
-          cgInstanceRef.current.set({ fen: puzzleFen });
+          const resetChess = new Chess(puzzleFen);
+          cgInstanceRef.current.set({
+            fen: puzzleFen,
+            turnColor: resetChess.turn() === 'b' ? 'black' : 'white',
+            movable: {
+              color: resetChess.turn() === 'b' ? 'black' : 'white',
+              dests: getDests(resetChess) as any
+            }
+          });
         }
       }
     };
@@ -2828,6 +2853,48 @@ export default function GameEditor({
                   <Zap className="w-3.5 h-3.5 text-amber-500" />
                   Show Hint
                 </button>
+              </div>
+
+              {/* Manual Solve Status Override */}
+              <div className="flex flex-col gap-1.5 pt-2 border-t border-stone-250/50 dark:border-zinc-800/50 shrink-0" id="manual-solve-status-panel">
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${darkMode ? 'text-zinc-500' : 'text-stone-400'}`}>
+                  Record Status
+                </span>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onUpdateGame({ ...game, puzzleStatus: 'unsolved' })}
+                    className={`text-[10px] font-bold py-1.5 rounded transition-colors text-center border ${
+                      game.puzzleStatus === 'unsolved' || !game.puzzleStatus
+                        ? 'bg-stone-200 text-stone-850 border-stone-350 dark:bg-zinc-800 dark:text-zinc-200 dark:border-zinc-700'
+                        : 'bg-stone-100/40 text-stone-450 border-transparent hover:bg-stone-100 dark:bg-zinc-900/30 dark:text-zinc-500 dark:hover:bg-zinc-900'
+                    }`}
+                  >
+                    ⚪ Unsolved
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onUpdateGame({ ...game, puzzleStatus: 'solved' })}
+                    className={`text-[10px] font-bold py-1.5 rounded transition-colors text-center border ${
+                      game.puzzleStatus === 'solved'
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-350 dark:bg-emerald-955/50 dark:text-emerald-300 dark:border-emerald-900/40'
+                        : 'bg-stone-100/40 text-stone-450 border-transparent hover:bg-stone-100 dark:bg-zinc-900/30 dark:text-zinc-500 dark:hover:bg-zinc-900'
+                    }`}
+                  >
+                    🟢 Solved
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onUpdateGame({ ...game, puzzleStatus: 'failed' })}
+                    className={`text-[10px] font-bold py-1.5 rounded transition-colors text-center border ${
+                      game.puzzleStatus === 'failed'
+                        ? 'bg-rose-100 text-rose-800 border-rose-350 dark:bg-rose-955/50 dark:text-rose-300 dark:border-rose-900/40'
+                        : 'bg-stone-100/40 text-stone-450 border-transparent hover:bg-stone-100 dark:bg-zinc-900/30 dark:text-zinc-500 dark:hover:bg-zinc-900'
+                    }`}
+                  >
+                    🔴 Failed
+                  </button>
+                </div>
               </div>
 
               {/* Give Up / Reveal Solution */}

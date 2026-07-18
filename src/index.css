@@ -232,3 +232,15 @@ cg-container {
   text-shadow: none !important;
 }
 
+/* Chessground pieces rendering optimization - sharp and lag-free */
+piece {
+  image-rendering: -webkit-optimize-contrast !important;
+  image-rendering: crisp-edges !important;
+  image-rendering: pixelated !important;
+  backface-visibility: hidden !important;
+  -webkit-backface-visibility: hidden !important;
+  transform: translateZ(0) !important;
+  will-change: transform !important;
+}
+
+

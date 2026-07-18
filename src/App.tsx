@@ -367,6 +367,36 @@ export default function App() {
     triggerAlert(`Moved game "${gameToMove.title}" to target collection`);
   };
 
+  // MOVE FOLDER (FOR DRAG AND DROP)
+  const handleMoveFolder = (folderId: string, targetParentId: string | null) => {
+    // Prevent cycle: folderId cannot be targetParentId, nor can targetParentId be a descendant of folderId
+    if (folderId === targetParentId) return;
+
+    const isDescendant = (parent: string, child: string): boolean => {
+      const childFolder = folders.find(f => f.id === child);
+      if (!childFolder || !childFolder.parentId) return false;
+      if (childFolder.parentId === parent) return true;
+      return isDescendant(parent, childFolder.parentId);
+    };
+
+    if (targetParentId && isDescendant(folderId, targetParentId)) {
+      triggerAlert("Cannot nest a collection inside its own subcollection", "error");
+      return;
+    }
+
+    const updated = folders.map(f => {
+      if (f.id === folderId) {
+        return { ...f, parentId: targetParentId };
+      }
+      return f;
+    });
+
+    setFolders(updated);
+    saveFoldersToLocalStorage(updated);
+    triggerAlert("Collection structure updated successfully");
+    setHasUnsyncedChanges(true);
+  };
+
   // UPDATE GAME DETAILS / MOVES
   const handleUpdateGame = (updatedGame: Game) => {
     const updated = folders.map(f => {
@@ -1033,6 +1063,8 @@ export default function App() {
           hasUnsyncedChanges={hasUnsyncedChanges && !!localStorage.getItem('gist_sync_token') && !!localStorage.getItem('gist_sync_id')}
           darkMode={darkMode}
           setDarkMode={setDarkMode}
+          onMoveGame={handleMoveGame}
+          onMoveFolder={handleMoveFolder}
           onUpdateGame={handleUpdateGame}
           onDeleteGame={handleDeleteGame}
           isCollapsed={isSidebarCollapsed}
