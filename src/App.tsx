@@ -712,6 +712,62 @@ export default function App() {
         }
 
         // 2. Bidirectional Lossless Smart Merge
+        const localGameFolderMap = new Map<string, string>();
+        currentFolders.forEach(folder => {
+          folder.games?.forEach(game => {
+            localGameFolderMap.set(game.id, folder.id);
+          });
+        });
+
+        const cloudGameFolderMap = new Map<string, string>();
+        cloudFolders.forEach(folder => {
+          folder.games?.forEach(game => {
+            cloudGameFolderMap.set(game.id, folder.id);
+          });
+        });
+
+        // Merge games list by ID to decide on the best version of each game
+        const mergedGamesMap = new Map<string, { game: any; folderId: string }>();
+        
+        const allGameIds = new Set<string>([
+          ...localGameFolderMap.keys(),
+          ...cloudGameFolderMap.keys()
+        ]);
+
+        allGameIds.forEach(gameId => {
+          let localGame: any = null;
+          for (const f of currentFolders) {
+            const found = f.games?.find(g => g.id === gameId);
+            if (found) { localGame = found; break; }
+          }
+
+          let cloudGame: any = null;
+          for (const f of cloudFolders) {
+            const found = f.games?.find(g => g.id === gameId);
+            if (found) { cloudGame = found; break; }
+          }
+
+          let mergedGame: any = null;
+          if (localGame && cloudGame) {
+            const localScore = (localGame.moves?.length || 0) + (localGame.analysisReports?.length || 0) * 5 + (localGame.notes?.length || 0) * 0.1;
+            const cloudScore = (cloudGame.moves?.length || 0) + (cloudGame.analysisReports?.length || 0) * 5 + (cloudGame.notes?.length || 0) * 0.1;
+            mergedGame = localScore >= cloudScore ? localGame : cloudGame;
+          } else if (localGame) {
+            mergedGame = localGame;
+          } else {
+            mergedGame = cloudGame;
+          }
+
+          const finalFolderId = localGameFolderMap.has(gameId)
+            ? localGameFolderMap.get(gameId)!
+            : cloudGameFolderMap.get(gameId)!;
+
+          mergedGamesMap.set(gameId, {
+            game: mergedGame,
+            folderId: finalFolderId
+          });
+        });
+
         const localFoldersMap = new Map<string, Folder>();
         currentFolders.forEach(f => localFoldersMap.set(f.id, f));
 
@@ -725,47 +781,30 @@ export default function App() {
           const localFolder = localFoldersMap.get(folderId);
           const cloudFolder = cloudFoldersMap.get(folderId);
 
+          const folderGames: any[] = [];
+          mergedGamesMap.forEach((val) => {
+            if (val.folderId === folderId) {
+              folderGames.push(val.game);
+            }
+          });
+
           if (localFolder && cloudFolder) {
-            const localGamesMap = new Map<string, any>();
-            localFolder.games.forEach(g => localGamesMap.set(g.id, g));
-
-            const cloudGamesMap = new Map<string, any>();
-            cloudFolder.games.forEach(g => cloudGamesMap.set(g.id, g));
-
-            const allGameIds = new Set<string>([...localGamesMap.keys(), ...cloudGamesMap.keys()]);
-            const mergedGames: any[] = [];
-
-            allGameIds.forEach(gameId => {
-              const localGame = localGamesMap.get(gameId);
-              const cloudGame = cloudGamesMap.get(gameId);
-
-              if (localGame && cloudGame) {
-                // Compare moves, analysis reports, and notes
-                const localScore = (localGame.moves?.length || 0) + (localGame.analysisReports?.length || 0) * 5 + (localGame.notes?.length || 0) * 0.1;
-                const cloudScore = (cloudGame.moves?.length || 0) + (cloudGame.analysisReports?.length || 0) * 5 + (cloudGame.notes?.length || 0) * 0.1;
-
-                if (localScore >= cloudScore) {
-                  mergedGames.push(localGame);
-                } else {
-                  mergedGames.push(cloudGame);
-                }
-              } else if (localGame) {
-                mergedGames.push(localGame);
-              } else if (cloudGame) {
-                mergedGames.push(cloudGame);
-              }
-            });
-
             mergedFolders.push({
               ...localFolder,
               name: localFolder.name || cloudFolder.name,
-              parentId: localFolder.parentId || cloudFolder.parentId || null,
-              games: mergedGames
+              parentId: localFolder.parentId !== undefined ? localFolder.parentId : cloudFolder.parentId || null,
+              games: folderGames
             });
           } else if (localFolder) {
-            mergedFolders.push(localFolder);
+            mergedFolders.push({
+              ...localFolder,
+              games: folderGames
+            });
           } else if (cloudFolder) {
-            mergedFolders.push(cloudFolder);
+            mergedFolders.push({
+              ...cloudFolder,
+              games: folderGames
+            });
           }
         });
 
@@ -864,6 +903,62 @@ export default function App() {
         }
 
         // 2. Bidirectional Lossless Smart Merge
+        const localGameFolderMap = new Map<string, string>();
+        currentFolders.forEach(folder => {
+          folder.games?.forEach(game => {
+            localGameFolderMap.set(game.id, folder.id);
+          });
+        });
+
+        const cloudGameFolderMap = new Map<string, string>();
+        cloudFolders.forEach(folder => {
+          folder.games?.forEach(game => {
+            cloudGameFolderMap.set(game.id, folder.id);
+          });
+        });
+
+        // Merge games list by ID to decide on the best version of each game
+        const mergedGamesMap = new Map<string, { game: any; folderId: string }>();
+        
+        const allGameIds = new Set<string>([
+          ...localGameFolderMap.keys(),
+          ...cloudGameFolderMap.keys()
+        ]);
+
+        allGameIds.forEach(gameId => {
+          let localGame: any = null;
+          for (const f of currentFolders) {
+            const found = f.games?.find(g => g.id === gameId);
+            if (found) { localGame = found; break; }
+          }
+
+          let cloudGame: any = null;
+          for (const f of cloudFolders) {
+            const found = f.games?.find(g => g.id === gameId);
+            if (found) { cloudGame = found; break; }
+          }
+
+          let mergedGame: any = null;
+          if (localGame && cloudGame) {
+            const localScore = (localGame.moves?.length || 0) + (localGame.analysisReports?.length || 0) * 5 + (localGame.notes?.length || 0) * 0.1;
+            const cloudScore = (cloudGame.moves?.length || 0) + (cloudGame.analysisReports?.length || 0) * 5 + (cloudGame.notes?.length || 0) * 0.1;
+            mergedGame = localScore >= cloudScore ? localGame : cloudGame;
+          } else if (localGame) {
+            mergedGame = localGame;
+          } else {
+            mergedGame = cloudGame;
+          }
+
+          const finalFolderId = localGameFolderMap.has(gameId)
+            ? localGameFolderMap.get(gameId)!
+            : cloudGameFolderMap.get(gameId)!;
+
+          mergedGamesMap.set(gameId, {
+            game: mergedGame,
+            folderId: finalFolderId
+          });
+        });
+
         const localFoldersMap = new Map<string, Folder>();
         currentFolders.forEach(f => localFoldersMap.set(f.id, f));
 
@@ -877,46 +972,30 @@ export default function App() {
           const localFolder = localFoldersMap.get(folderId);
           const cloudFolder = cloudFoldersMap.get(folderId);
 
+          const folderGames: any[] = [];
+          mergedGamesMap.forEach((val) => {
+            if (val.folderId === folderId) {
+              folderGames.push(val.game);
+            }
+          });
+
           if (localFolder && cloudFolder) {
-            const localGamesMap = new Map<string, any>();
-            localFolder.games.forEach(g => localGamesMap.set(g.id, g));
-
-            const cloudGamesMap = new Map<string, any>();
-            cloudFolder.games.forEach(g => cloudGamesMap.set(g.id, g));
-
-            const allGameIds = new Set<string>([...localGamesMap.keys(), ...cloudGamesMap.keys()]);
-            const mergedGames: any[] = [];
-
-            allGameIds.forEach(gameId => {
-              const localGame = localGamesMap.get(gameId);
-              const cloudGame = cloudGamesMap.get(gameId);
-
-              if (localGame && cloudGame) {
-                const localScore = (localGame.moves?.length || 0) + (localGame.analysisReports?.length || 0) * 5 + (localGame.notes?.length || 0) * 0.1;
-                const cloudScore = (cloudGame.moves?.length || 0) + (cloudGame.analysisReports?.length || 0) * 5 + (cloudGame.notes?.length || 0) * 0.1;
-
-                if (localScore >= cloudScore) {
-                  mergedGames.push(localGame);
-                } else {
-                  mergedGames.push(cloudGame);
-                }
-              } else if (localGame) {
-                mergedGames.push(localGame);
-              } else if (cloudGame) {
-                mergedGames.push(cloudGame);
-              }
-            });
-
             mergedFolders.push({
               ...localFolder,
               name: localFolder.name || cloudFolder.name,
-              parentId: localFolder.parentId || cloudFolder.parentId || null,
-              games: mergedGames
+              parentId: localFolder.parentId !== undefined ? localFolder.parentId : cloudFolder.parentId || null,
+              games: folderGames
             });
           } else if (localFolder) {
-            mergedFolders.push(localFolder);
+            mergedFolders.push({
+              ...localFolder,
+              games: folderGames
+            });
           } else if (cloudFolder) {
-            mergedFolders.push(cloudFolder);
+            mergedFolders.push({
+              ...cloudFolder,
+              games: folderGames
+            });
           }
         });
 

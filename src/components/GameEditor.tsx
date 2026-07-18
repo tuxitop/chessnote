@@ -44,13 +44,13 @@ import {
 import { Chess } from 'chess.js';
 import { Game, MovePly, AnalysisReport } from '../types';
 import { exportToPGN, parsePGN } from '../utils/pgn';
-import { Chessground } from 'chessground';
-import { Api } from 'chessground/api';
-import { Config } from 'chessground/config';
+import { Chessground } from '@lichess-org/chessground';
+import { Api } from '@lichess-org/chessground/api';
+import { Config } from '@lichess-org/chessground/config';
 
-import 'chessground/assets/chessground.base.css';
-import 'chessground/assets/chessground.brown.css';
-import 'chessground/assets/chessground.cburnett.css';
+import '@lichess-org/chessground/assets/chessground.base.css';
+import '@lichess-org/chessground/assets/chessground.brown.css';
+import '@lichess-org/chessground/assets/chessground.cburnett.css';
 
 // Helper to extract legal moves for Chessground
 function getDests(chess: Chess): any {
@@ -1038,7 +1038,24 @@ export default function GameEditor({
     const cg = Chessground(boardElement, config);
     cgInstanceRef.current = cg;
 
+    // Use ResizeObserver to automatically redraw Chessground whenever container size is updated/computed
+    const resizeObserver = new ResizeObserver(() => {
+      if (cgInstanceRef.current) {
+        cgInstanceRef.current.redrawAll();
+      }
+    });
+    resizeObserver.observe(boardElement);
+
+    // Initial brief delay to ensure container width/height is fully calculated
+    const timer = setTimeout(() => {
+      if (cgInstanceRef.current) {
+        cgInstanceRef.current.redrawAll();
+      }
+    }, 100);
+
     return () => {
+      clearTimeout(timer);
+      resizeObserver.disconnect();
       if (cgInstanceRef.current) {
         cgInstanceRef.current.destroy();
         cgInstanceRef.current = null;
@@ -1162,13 +1179,30 @@ export default function GameEditor({
       previewCgRef.current = Chessground(previewBoardElement, config);
     }
 
+    // Use ResizeObserver to automatically redraw Chessground whenever container size is updated/computed
+    const resizeObserver = new ResizeObserver(() => {
+      if (previewCgRef.current) {
+        previewCgRef.current.redrawAll();
+      }
+    });
+    resizeObserver.observe(previewBoardElement);
+
+    // Initial brief delay to ensure container width/height is fully calculated
+    const timer = setTimeout(() => {
+      if (previewCgRef.current) {
+        previewCgRef.current.redrawAll();
+      }
+    }, 100);
+
     return () => {
+      clearTimeout(timer);
+      resizeObserver.disconnect();
       if (previewCgRef.current) {
         previewCgRef.current.destroy();
         previewCgRef.current = null;
       }
     };
-  }, [activeTab, isPuzzleActive, previewBoardElement]);
+  }, [activeTab, isPuzzleActive, previewBoardElement, game.id]);
 
   // Update existing standard preview Chessground board dynamically with piece animations
   useEffect(() => {
@@ -1355,14 +1389,27 @@ export default function GameEditor({
     workerRef.current.postMessage('go depth 12');
   }, [currentPlyIndex, activeLine, isEngineActive, game.startingColor]);
 
-  // Clean up engine worker on unmount
+  // Clean up engine worker on unmount, page unload, and when game changes
   useEffect(() => {
-    return () => {
+    const handleUnload = () => {
       if (workerRef.current) {
         workerRef.current.terminate();
+        workerRef.current = null;
       }
     };
-  }, []);
+
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('pagehide', handleUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('pagehide', handleUnload);
+      if (workerRef.current) {
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
+    };
+  }, [game.id]);
 
   // Reset active board preview indices when game loads
   useEffect(() => {
@@ -1378,6 +1425,9 @@ export default function GameEditor({
     setUndoHistory([]);
     setRedoHistory([]);
     setPuzzleEditMode(false);
+
+    // Completely stop and unload Stockfish engine when game loads/changes
+    stopEngine();
 
     // Auto-disable freestyleMode for puzzles or valid games so interactive board/engine works
     const isValid = checkPgnValidity(game.moves, game.startingColor, game.initialFen);
