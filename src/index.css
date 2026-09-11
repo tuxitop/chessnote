@@ -1,10 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
-/* Import Chessground stylesheets natively to ensure they are bundled and loaded correctly */
-@import "../node_modules/@lichess-org/chessground/assets/chessground.base.css";
-@import "../node_modules/@lichess-org/chessground/assets/chessground.brown.css";
-@import "../node_modules/@lichess-org/chessground/assets/chessground.cburnett.css";
+/* Chessground styles are imported in GameEditor.tsx via
+   '@lichess-org/chessground/assets/...' so Vite resolves them correctly.
+   Do not @import from ../node_modules here — it breaks `vite build`. */
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
