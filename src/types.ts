@@ -34,6 +34,7 @@ export interface Game {
   analysisReports?: AnalysisReport[]; // List of saved position/game reports
   starred?: boolean;          // star status
   tags?: string[];            // tags
+  updatedAt?: string;         // ISO timestamp of last local modification (for sync LWW)
 }
 
 export interface Folder {
@@ -41,6 +42,7 @@ export interface Folder {
   name: string;               // e.g. "2026-07-07"
   games: Game[];
   parentId?: string | null;   // parent folder ID for nested collections
+  updatedAt?: string;         // ISO timestamp of last local modification (for sync LWW)
 }
 
 export interface AppBackup {

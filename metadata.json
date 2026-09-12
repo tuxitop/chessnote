@@ -1,6 +1,5 @@
 {
-  "name": "Chess Notation Manager",
-  "description": "An efficient, minimal, and lightning-fast digital chess scoresheet for recording game moves with hotkeys, local storage, and PGN support.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "name": "Chessnote — Digital Chess Scoresheet",
+  "description": "A fast, local-first digital chess scoresheet: record games, manage collections, import/export PGN, and sync across devices via GitHub Gist.",
+  "requestFramePermissions": []
 }

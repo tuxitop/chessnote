@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Folder, Game, MovePly } from './types';
 import { getCurrentDateString, generateId } from './utils/pgn';
+import { smartMergeFolders, pruneTombstones, setLastSyncNow, recordFolderDeletion, recordGameDeletion, stampNow } from './utils/sync';
 import Sidebar from './components/Sidebar';
 import GameEditor from './components/GameEditor';
 import ImportModal from './components/ImportModal';
@@ -248,7 +249,8 @@ export default function App() {
       id: 'f-' + generateId(),
       name: finalName,
       games: [],
-      parentId: parentId || null
+      parentId: parentId || null,
+      updatedAt: stampNow()
     };
 
     const updated = [newFolder, ...folders];
@@ -264,7 +266,7 @@ export default function App() {
   const handleRenameFolder = (id: string, newName: string) => {
     const updated = folders.map(f => {
       if (f.id === id) {
-        return { ...f, name: newName };
+        return { ...f, name: newName, updatedAt: stampNow() };
       }
       return f;
     });
@@ -282,6 +284,13 @@ export default function App() {
     };
     const folderIdsToDelete = findChildrenIds(id);
     const updated = folders.filter(f => !folderIdsToDelete.includes(f.id));
+    // Record tombstones so Smart Merge does not resurrect them from cloud.
+    // Also tombstone every game inside the deleted folders.
+    const deletedGameIds = folders
+      .filter(f => folderIdsToDelete.includes(f.id))
+      .flatMap(f => (f.games || []).map(g => g.id));
+    recordFolderDeletion(folderIdsToDelete);
+    if (deletedGameIds.length > 0) recordGameDeletion(deletedGameIds);
     setFolders(updated);
     
     // Reset active folder/game selection if deleted folder was active
@@ -313,13 +322,15 @@ export default function App() {
       date: getCurrentDateString(),
       startingColor: 'white',
       moves: [],
-      notes: ''
+      notes: '',
+      updatedAt: stampNow()
     };
 
     const updated = folders.map(f => {
       if (f.id === folderId) {
         return {
           ...f,
+          updatedAt: stampNow(),
           games: [newGame, ...f.games] // Prepend for quick top-of-list access
         };
       }
@@ -348,12 +359,14 @@ export default function App() {
       if (f.id === sourceFolderId) {
         return {
           ...f,
+          updatedAt: stampNow(),
           games: f.games.filter(g => g.id !== gameId)
         };
       }
       if (f.id === targetFolderId) {
         return {
           ...f,
+          updatedAt: stampNow(),
           games: [gameToMove, ...f.games]
         };
       }
@@ -386,7 +399,7 @@ export default function App() {
 
     const updated = folders.map(f => {
       if (f.id === folderId) {
-        return { ...f, parentId: targetParentId };
+        return { ...f, parentId: targetParentId, updatedAt: stampNow() };
       }
       return f;
     });
@@ -398,12 +411,15 @@ export default function App() {
   };
 
   // UPDATE GAME DETAILS / MOVES
+  // Every edit (including move deletions / truncations) bumps updatedAt so
+  // sync uses last-write-wins instead of "longer game wins".
   const handleUpdateGame = (updatedGame: Game) => {
+    const stampedGame: Game = { ...updatedGame, updatedAt: stampNow() };
     const updated = folders.map(f => {
-      if (f.games.some(g => g.id === updatedGame.id)) {
+      if (f.games.some(g => g.id === stampedGame.id)) {
         return {
           ...f,
-          games: f.games.map(g => g.id === updatedGame.id ? updatedGame : g)
+          games: f.games.map(g => g.id === stampedGame.id ? stampedGame : g)
         };
       }
       return f;
@@ -422,12 +438,14 @@ export default function App() {
         deletedFromFolderId = f.id;
         return {
           ...f,
+          updatedAt: stampNow(),
           games: f.games.filter(g => g.id !== gameId)
         };
       }
       return f;
     });
 
+    recordGameDeletion([gameId]);
     setFolders(updated);
     
     // Select another game from same folder if possible
@@ -621,6 +639,8 @@ export default function App() {
     setFolders(mergedFolders);
     localStorage.setItem('chess_notation_folders', JSON.stringify(mergedFolders));
     setHasUnsyncedChanges(false);
+    setLastSyncNow();
+    pruneTombstones(mergedFolders);
     
     // Validate currently selected folder and game
     if (mergedFolders.length > 0) {
@@ -711,102 +731,9 @@ export default function App() {
           throw new Error('Cloud Gist database format is invalid.');
         }
 
-        // 2. Bidirectional Lossless Smart Merge
-        const localGameFolderMap = new Map<string, string>();
-        currentFolders.forEach(folder => {
-          folder.games?.forEach(game => {
-            localGameFolderMap.set(game.id, folder.id);
-          });
-        });
-
-        const cloudGameFolderMap = new Map<string, string>();
-        cloudFolders.forEach(folder => {
-          folder.games?.forEach(game => {
-            cloudGameFolderMap.set(game.id, folder.id);
-          });
-        });
-
-        // Merge games list by ID to decide on the best version of each game
-        const mergedGamesMap = new Map<string, { game: any; folderId: string }>();
-        
-        const allGameIds = new Set<string>([
-          ...localGameFolderMap.keys(),
-          ...cloudGameFolderMap.keys()
-        ]);
-
-        allGameIds.forEach(gameId => {
-          let localGame: any = null;
-          for (const f of currentFolders) {
-            const found = f.games?.find(g => g.id === gameId);
-            if (found) { localGame = found; break; }
-          }
-
-          let cloudGame: any = null;
-          for (const f of cloudFolders) {
-            const found = f.games?.find(g => g.id === gameId);
-            if (found) { cloudGame = found; break; }
-          }
-
-          let mergedGame: any = null;
-          if (localGame && cloudGame) {
-            const localScore = (localGame.moves?.length || 0) + (localGame.analysisReports?.length || 0) * 5 + (localGame.notes?.length || 0) * 0.1;
-            const cloudScore = (cloudGame.moves?.length || 0) + (cloudGame.analysisReports?.length || 0) * 5 + (cloudGame.notes?.length || 0) * 0.1;
-            mergedGame = localScore >= cloudScore ? localGame : cloudGame;
-          } else if (localGame) {
-            mergedGame = localGame;
-          } else {
-            mergedGame = cloudGame;
-          }
-
-          const finalFolderId = localGameFolderMap.has(gameId)
-            ? localGameFolderMap.get(gameId)!
-            : cloudGameFolderMap.get(gameId)!;
-
-          mergedGamesMap.set(gameId, {
-            game: mergedGame,
-            folderId: finalFolderId
-          });
-        });
-
-        const localFoldersMap = new Map<string, Folder>();
-        currentFolders.forEach(f => localFoldersMap.set(f.id, f));
-
-        const cloudFoldersMap = new Map<string, Folder>();
-        cloudFolders.forEach(f => cloudFoldersMap.set(f.id, f));
-
-        const allFolderIds = new Set<string>([...localFoldersMap.keys(), ...cloudFoldersMap.keys()]);
-        const mergedFolders: Folder[] = [];
-
-        allFolderIds.forEach(folderId => {
-          const localFolder = localFoldersMap.get(folderId);
-          const cloudFolder = cloudFoldersMap.get(folderId);
-
-          const folderGames: any[] = [];
-          mergedGamesMap.forEach((val) => {
-            if (val.folderId === folderId) {
-              folderGames.push(val.game);
-            }
-          });
-
-          if (localFolder && cloudFolder) {
-            mergedFolders.push({
-              ...localFolder,
-              name: localFolder.name || cloudFolder.name,
-              parentId: localFolder.parentId !== undefined ? localFolder.parentId : cloudFolder.parentId || null,
-              games: folderGames
-            });
-          } else if (localFolder) {
-            mergedFolders.push({
-              ...localFolder,
-              games: folderGames
-            });
-          } else if (cloudFolder) {
-            mergedFolders.push({
-              ...cloudFolder,
-              games: folderGames
-            });
-          }
-        });
+        // 2. Deletion-aware Smart Merge (tombstones + LWW by updatedAt).
+        // Deleted folders/games/moves stay deleted instead of resurrecting.
+        const mergedFolders: Folder[] = smartMergeFolders(currentFolders, cloudFolders);
 
         // 3. Save merged database to Gist Cloud
         const backupData = {
@@ -841,8 +768,8 @@ export default function App() {
         setFolders(mergedFolders);
         localStorage.setItem('chess_notation_folders', JSON.stringify(mergedFolders));
         setHasUnsyncedChanges(false);
-        const now = new Date().toLocaleString();
-        localStorage.setItem('gist_sync_last_time', now);
+        setLastSyncNow();
+        pruneTombstones(mergedFolders);
 
         triggerAlert('Background cloud sync completed successfully!', 'success');
       } catch (err: any) {
@@ -902,102 +829,8 @@ export default function App() {
           throw new Error('Cloud Gist database format is invalid.');
         }
 
-        // 2. Bidirectional Lossless Smart Merge
-        const localGameFolderMap = new Map<string, string>();
-        currentFolders.forEach(folder => {
-          folder.games?.forEach(game => {
-            localGameFolderMap.set(game.id, folder.id);
-          });
-        });
-
-        const cloudGameFolderMap = new Map<string, string>();
-        cloudFolders.forEach(folder => {
-          folder.games?.forEach(game => {
-            cloudGameFolderMap.set(game.id, folder.id);
-          });
-        });
-
-        // Merge games list by ID to decide on the best version of each game
-        const mergedGamesMap = new Map<string, { game: any; folderId: string }>();
-        
-        const allGameIds = new Set<string>([
-          ...localGameFolderMap.keys(),
-          ...cloudGameFolderMap.keys()
-        ]);
-
-        allGameIds.forEach(gameId => {
-          let localGame: any = null;
-          for (const f of currentFolders) {
-            const found = f.games?.find(g => g.id === gameId);
-            if (found) { localGame = found; break; }
-          }
-
-          let cloudGame: any = null;
-          for (const f of cloudFolders) {
-            const found = f.games?.find(g => g.id === gameId);
-            if (found) { cloudGame = found; break; }
-          }
-
-          let mergedGame: any = null;
-          if (localGame && cloudGame) {
-            const localScore = (localGame.moves?.length || 0) + (localGame.analysisReports?.length || 0) * 5 + (localGame.notes?.length || 0) * 0.1;
-            const cloudScore = (cloudGame.moves?.length || 0) + (cloudGame.analysisReports?.length || 0) * 5 + (cloudGame.notes?.length || 0) * 0.1;
-            mergedGame = localScore >= cloudScore ? localGame : cloudGame;
-          } else if (localGame) {
-            mergedGame = localGame;
-          } else {
-            mergedGame = cloudGame;
-          }
-
-          const finalFolderId = localGameFolderMap.has(gameId)
-            ? localGameFolderMap.get(gameId)!
-            : cloudGameFolderMap.get(gameId)!;
-
-          mergedGamesMap.set(gameId, {
-            game: mergedGame,
-            folderId: finalFolderId
-          });
-        });
-
-        const localFoldersMap = new Map<string, Folder>();
-        currentFolders.forEach(f => localFoldersMap.set(f.id, f));
-
-        const cloudFoldersMap = new Map<string, Folder>();
-        cloudFolders.forEach(f => cloudFoldersMap.set(f.id, f));
-
-        const allFolderIds = new Set<string>([...localFoldersMap.keys(), ...cloudFoldersMap.keys()]);
-        const mergedFolders: Folder[] = [];
-
-        allFolderIds.forEach(folderId => {
-          const localFolder = localFoldersMap.get(folderId);
-          const cloudFolder = cloudFoldersMap.get(folderId);
-
-          const folderGames: any[] = [];
-          mergedGamesMap.forEach((val) => {
-            if (val.folderId === folderId) {
-              folderGames.push(val.game);
-            }
-          });
-
-          if (localFolder && cloudFolder) {
-            mergedFolders.push({
-              ...localFolder,
-              name: localFolder.name || cloudFolder.name,
-              parentId: localFolder.parentId !== undefined ? localFolder.parentId : cloudFolder.parentId || null,
-              games: folderGames
-            });
-          } else if (localFolder) {
-            mergedFolders.push({
-              ...localFolder,
-              games: folderGames
-            });
-          } else if (cloudFolder) {
-            mergedFolders.push({
-              ...cloudFolder,
-              games: folderGames
-            });
-          }
-        });
+        // 2. Deletion-aware Smart Merge (tombstones + LWW by updatedAt).
+        const mergedFolders: Folder[] = smartMergeFolders(currentFolders, cloudFolders);
 
         // 3. Save merged database to Gist Cloud
         const backupData = {
@@ -1032,8 +865,8 @@ export default function App() {
         setFolders(mergedFolders);
         localStorage.setItem('chess_notation_folders', JSON.stringify(mergedFolders));
         setHasUnsyncedChanges(false);
-        const now = new Date().toLocaleString();
-        localStorage.setItem('gist_sync_last_time', now);
+        setLastSyncNow();
+        pruneTombstones(mergedFolders);
 
         triggerAlert('Automatic cloud sync completed successfully!', 'success');
       } catch (err: any) {
@@ -1071,7 +904,8 @@ export default function App() {
       result: pg.result || '*',
       initialFen: pg.initialFen,
       themes: pg.themes,
-      puzzleStatus: pg.puzzleStatus
+      puzzleStatus: pg.puzzleStatus,
+      updatedAt: stampNow()
     }));
 
     let updatedFolders = [...folders];
@@ -1082,7 +916,8 @@ export default function App() {
       const newFolder: Folder = {
         id: 'f-' + generateId(),
         name: fName,
-        games: fullImportedGames
+        games: fullImportedGames,
+        updatedAt: stampNow()
       };
       updatedFolders = [newFolder, ...updatedFolders];
       targetFolderId = newFolder.id;
@@ -1092,6 +927,7 @@ export default function App() {
         if (f.id === targetFolderId) {
           return {
             ...f,
+            updatedAt: stampNow(),
             games: [...fullImportedGames, ...f.games] // prepending
           };
         }

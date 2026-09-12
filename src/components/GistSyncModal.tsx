@@ -18,6 +18,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { Folder } from '../types';
+import { smartMergeFolders, setLastSyncNow, pruneTombstones } from '../utils/sync';
 
 interface GistSyncModalProps {
   onClose: () => void;
@@ -201,10 +202,11 @@ export default function GistSyncModal({
       const now = new Date().toLocaleString();
       setLastSynced(now);
       localStorage.setItem('gist_sync_last_time', now);
+      setLastSyncNow();
 
       setStatus({
         type: 'success',
-        message: 'All local scoresheets successfully uploaded and saved to your cloud Gist!'
+        message: 'All local scoresheets successfully uploaded and saved to your cloud Gist! Deletions were propagated (cloud now matches local).'
       });
       
       onSyncSuccess(folders, 'Data successfully pushed to cloud');
@@ -304,106 +306,10 @@ export default function GistSyncModal({
 
       setStatus({ type: 'info', message: 'Comparing and merging collections intelligently...' });
 
-      // SMART MERGE ALGORITHM:
-      // We will merge folders and games based on their unique IDs.
-      // To prevent games from reappearing in old folders during sync, we record 
-      // where games are located. Local locations are preferred as they represent
-      // the latest organization intent (e.g. moves).
-      const localGameFolderMap = new Map<string, string>();
-      folders.forEach(folder => {
-        folder.games?.forEach(game => {
-          localGameFolderMap.set(game.id, folder.id);
-        });
-      });
-
-      const cloudGameFolderMap = new Map<string, string>();
-      cloudFolders.forEach(folder => {
-        folder.games?.forEach(game => {
-          cloudGameFolderMap.set(game.id, folder.id);
-        });
-      });
-
-      // Merge games list by ID to decide on the best version of each game
-      const mergedGamesMap = new Map<string, { game: any; folderId: string }>();
-      
-      const allGameIds = new Set<string>([
-        ...localGameFolderMap.keys(),
-        ...cloudGameFolderMap.keys()
-      ]);
-
-      allGameIds.forEach(gameId => {
-        let localGame: any = null;
-        for (const f of folders) {
-          const found = f.games?.find(g => g.id === gameId);
-          if (found) { localGame = found; break; }
-        }
-
-        let cloudGame: any = null;
-        for (const f of cloudFolders) {
-          const found = f.games?.find(g => g.id === gameId);
-          if (found) { cloudGame = found; break; }
-        }
-
-        let mergedGame: any = null;
-        if (localGame && cloudGame) {
-          const localScore = (localGame.moves?.length || 0) + (localGame.analysisReports?.length || 0) * 5 + (localGame.notes?.length || 0) * 0.1;
-          const cloudScore = (cloudGame.moves?.length || 0) + (cloudGame.analysisReports?.length || 0) * 5 + (cloudGame.notes?.length || 0) * 0.1;
-          mergedGame = localScore >= cloudScore ? localGame : cloudGame;
-        } else if (localGame) {
-          mergedGame = localGame;
-        } else {
-          mergedGame = cloudGame;
-        }
-
-        const finalFolderId = localGameFolderMap.has(gameId)
-          ? localGameFolderMap.get(gameId)!
-          : cloudGameFolderMap.get(gameId)!;
-
-        mergedGamesMap.set(gameId, {
-          game: mergedGame,
-          folderId: finalFolderId
-        });
-      });
-
-      const localFoldersMap = new Map<string, Folder>();
-      folders.forEach(f => localFoldersMap.set(f.id, f));
-
-      const cloudFoldersMap = new Map<string, Folder>();
-      cloudFolders.forEach(f => cloudFoldersMap.set(f.id, f));
-
-      const allFolderIds = new Set<string>([...localFoldersMap.keys(), ...cloudFoldersMap.keys()]);
-      const mergedFolders: Folder[] = [];
-
-      allFolderIds.forEach(folderId => {
-        const localFolder = localFoldersMap.get(folderId);
-        const cloudFolder = cloudFoldersMap.get(folderId);
-
-        const folderGames: any[] = [];
-        mergedGamesMap.forEach((val) => {
-          if (val.folderId === folderId) {
-            folderGames.push(val.game);
-          }
-        });
-
-        if (localFolder && cloudFolder) {
-          mergedFolders.push({
-            ...localFolder,
-            name: localFolder.name || cloudFolder.name,
-            parentId: localFolder.parentId !== undefined ? localFolder.parentId : cloudFolder.parentId || null,
-            games: folderGames
-          });
-        } else if (localFolder) {
-          mergedFolders.push({
-            ...localFolder,
-            games: folderGames
-          });
-        } else if (cloudFolder) {
-          mergedFolders.push({
-            ...cloudFolder,
-            games: folderGames
-          });
-        }
-      });
+      // Deletion-aware merge: tombstoned folders/games stay deleted,
+      // conflicting game versions resolve by updatedAt (LWW) so move
+      // deletions and edits propagate instead of "longer wins".
+      const mergedFolders: Folder[] = smartMergeFolders(folders, cloudFolders);
 
       setStatus({ type: 'info', message: 'Saving merged data to Cloud and Local...' });
 
@@ -439,10 +345,12 @@ export default function GistSyncModal({
       const now = new Date().toLocaleString();
       setLastSynced(now);
       localStorage.setItem('gist_sync_last_time', now);
+      setLastSyncNow();
+      pruneTombstones(mergedFolders);
 
       setStatus({
         type: 'success',
-        message: 'Lossless Smart Merge completed successfully! Both local workspace and cloud Gist have been synchronized.'
+        message: 'Smart Merge completed successfully! Deletions were respected and both sides are now synchronized.'
       });
 
       onSyncSuccess(mergedFolders, 'Bidirectional Smart Merge completed successfully');

@@ -1,13 +1,18 @@
 {
-  "name": "react-example",
+  "name": "chessnote",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Chessnote — a fast, local-first digital chess scoresheet. Record games, manage collections, import/export PGN, and sync across devices via GitHub Gist.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tuxitop/chessnote.git"
+  },
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
+    "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
